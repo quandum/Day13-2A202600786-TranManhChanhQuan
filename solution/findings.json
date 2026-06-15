@@ -1,12 +1,66 @@
 {
-  "team": "TODO-team-name",
+  "team": "vinuni-ai2k2-day13",
   "schema_version": 1,
   "findings": [
     {
+      "fault_class": "error_spike",
+      "evidence": {"metric": "tool_error_rate_config", "observed": "tool_error_rate=0.18 in config (18% of tool calls fail)", "trace_ids": []},
+      "root_cause": "config.json sets tool_error_rate=0.18 injecting random failures into every tool call; retry is disabled (max_attempts=1) so every failure propagates as an error status.",
+      "suggested_fix": "Set tool_error_rate=0.0 in config; enable retry with max_attempts=3 and backoff_ms=500."
+    },
+    {
       "fault_class": "latency_spike",
-      "evidence": {"metric": "latency_p95_ms", "observed": "TODO from your telemetry", "trace_ids": []},
-      "root_cause": "TODO: what config knob or behavior causes it?",
-      "suggested_fix": "TODO: config change and/or wrapper mitigation"
+      "evidence": {"metric": "latency_ms_p95_estimate", "observed": "timeout_ms=0 (no timeout); context_size=8 (large context window); verbose_system=true bloats prompt tokens", "trace_ids": []},
+      "root_cause": "No request timeout (timeout_ms=0) means runaway requests are never cancelled. verbose_system=true inflates the system prompt on every call, increasing prompt_tokens and therefore time-to-first-token.",
+      "suggested_fix": "Set timeout_ms=30000; verbose_system=false; context_size=4; enable cache."
+    },
+    {
+      "fault_class": "cost_blowup",
+      "evidence": {"metric": "tokens_per_request", "observed": "verbose_system=true; context_size=8; max_completion_tokens=2000; model_price_tier=premium; self_consistency=1 (no batching)", "trace_ids": []},
+      "root_cause": "verbose_system=true + context_size=8 produce oversized prompts. max_completion_tokens=2000 allows extremely long completions. premium price tier chosen unnecessarily.",
+      "suggested_fix": "verbose_system=false; context_size=4; max_completion_tokens=512; model_price_tier=standard; tool_budget=4 to cap tool calls."
+    },
+    {
+      "fault_class": "quality_drift",
+      "evidence": {"metric": "session_drift_rate_config", "observed": "session_drift_rate=0.06; context_reset_every=0 (never resets); self_consistency=1", "trace_ids": []},
+      "root_cause": "session_drift_rate=0.06 injects 6% corruption per turn; context is never reset (context_reset_every=0) so corruption accumulates across the session. self_consistency=1 means no voting to detect/correct drifted answers.",
+      "suggested_fix": "Set session_drift_rate=0.0; context_reset_every=6; self_consistency=2."
+    },
+    {
+      "fault_class": "infinite_loop",
+      "evidence": {"metric": "loop_guard_config", "observed": "loop_guard=false; max_steps=12 is the only guard", "trace_ids": []},
+      "root_cause": "loop_guard=false disables the agent's internal loop-detection logic, allowing repeated identical tool calls until max_steps is hit.",
+      "suggested_fix": "Set loop_guard=true; reduce max_steps=8."
+    },
+    {
+      "fault_class": "tool_failure",
+      "evidence": {"metric": "normalize_unicode_config", "observed": "normalize_unicode=false; catalog_override={macbook:{in_stock:false}} overrides real stock data", "trace_ids": []},
+      "root_cause": "normalize_unicode=false means city names with diacritics (e.g. 'Hà Nội') are passed raw to calc_shipping; if the tool expects ASCII it always errors. catalog_override incorrectly marks MacBook as out-of-stock when it is available.",
+      "suggested_fix": "Set normalize_unicode=true; catalog_override={}."
+    },
+    {
+      "fault_class": "pii_leak",
+      "evidence": {"metric": "redact_pii_config", "observed": "redact_pii=false; prompt does not instruct the model to omit PII; pub-13 question includes an email address", "trace_ids": []},
+      "root_cause": "redact_pii=false means no server-side PII scrubbing. The original prompt never told the model to omit emails/phones, so the LLM echoes them back verbatim in answers.",
+      "suggested_fix": "Set redact_pii=true in config; add 'Never repeat customer email or phone' to prompt; wrapper scans answer with regex and redacts before returning."
+    },
+    {
+      "fault_class": "fabrication",
+      "evidence": {"metric": "prompt_behavior", "observed": "original prompt.txt has no grounding rule; agent outputs totals even for out-of-stock/unknown items", "trace_ids": []},
+      "root_cause": "The default prompt says 'Help the customer and give a total' with no restriction — the LLM invents a plausible total even when check_stock returns no data or out-of-stock.",
+      "suggested_fix": "Rewrite prompt: 'Use ONLY tool data; if out-of-stock or not found, refuse with no total.'"
+    },
+    {
+      "fault_class": "arithmetic_error",
+      "evidence": {"metric": "temperature_config", "observed": "temperature=1.6 (extremely high); self_consistency=1; verify=false", "trace_ids": []},
+      "root_cause": "temperature=1.6 makes the model sample erratically, causing incorrect arithmetic (wrong discount application, wrong totals). verify=false means no self-check step. self_consistency=1 means no voting to catch outliers.",
+      "suggested_fix": "Set temperature=0.2; verify=true; self_consistency=2; add exact floor formula to prompt."
+    },
+    {
+      "fault_class": "tool_overuse",
+      "evidence": {"metric": "tool_budget_config", "observed": "tool_budget=0 (unlimited); original prompt has no tool-economy instruction", "trace_ids": []},
+      "root_cause": "tool_budget=0 imposes no cap on tool calls. The original prompt does not instruct the model to call each tool at most once, so the agent calls tools redundantly (e.g. check_stock twice) on every request.",
+      "suggested_fix": "Set tool_budget=4 in config; add 'Call each tool at most once' to prompt."
     }
   ]
 }

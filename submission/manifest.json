@@ -1,1 +1,7 @@
-{"team": "TODO", "members": [], "notes": ""}
+{
+  "team": "vinuni-ai2k2-day13",
+  "members": [
+    {"name": "Trần Mạnh Chánh Quân", "id": "2A202600786"}
+  ],
+  "notes": "config.json + prompt.txt + wrapper.py + findings.json (10 fault classes). LLM: gemini-2.5-flash via OpenAI-compatible endpoint."
+}
